@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "480871717841",
+    "project_id": "mad-hmwk2",
+    "storage_bucket": "mad-hmwk2.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:480871717841:android:163607d5a66d07d0f79ef0",
+        "android_client_info": {
+          "package_name": "com.example.message_board"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBkSjHfxpqxY_7Mk5W2DoQ-uaSTAA8vrd4"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
