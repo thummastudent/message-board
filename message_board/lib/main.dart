@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'screens/splash_screen.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -17,9 +18,7 @@ class MessageBoardApp extends StatelessWidget {
         colorSchemeSeed: Colors.indigo,
         useMaterial3: true,
       ),
-      home: const Scaffold(
-        body: Center(child: Text('Initializing Message Board...')),
-      ),
+      home: const SplashScreen(),
     );
   }
 }
