@@ -1,17 +1,22 @@
-# message_board
+# Message Board Vault (CSC 4360 — Homework 02)
 
-A new Flutter project.
+A real-time Flutter message board backed by Firebase Authentication and Cloud Firestore, enforcing database-layer ownership rules, idempotent writes, schema versioning/migration, and cursor-based pagination.
 
-## Getting Started
+## Setup & Running
+1. Install Flutter SDK and Firebase/FlutterFire CLIs (`dart pub global activate flutterfire_cli`).
+2. Configure Firebase targets: `flutterfire configure --project=mad-hmwk2 --platforms=android,web`.
+3. Install dependencies: `flutter pub get`.
+4. Run locally: `flutter run -d chrome` (or build Android release APK via `flutter build apk --release`).
 
-This project is a starting point for a Flutter application.
+## Architecture & Data Model
+- **`lib/services/auth_service.dart` (`AuthService`)**: Centralizes `register`, `signIn`, `signOut`, `currentUser`, and `authStateChanges()`. Registration writes the required 5-field user record to `users/{uid}` (`uid`, `firstName`, `lastName`, `role`, `registrationDateTime` via `FieldValue.serverTimestamp()`).
+- **`lib/services/board_service.dart` (`BoardService`)**: Centralizes all Firestore `messages/{msgId}` CRUD operations (`createMessage`, live `messagesStream` via `snapshots()`, `updateMessage`, `deleteMessage`).
+- **Separation of Concerns**:
+  - `users/{uid}`: Private per-user profile written once at registration by the owning client.
+  - `messages/{msgId}`: Public board posts readable by any signed-in user; `create` requires `request.resource.data.authorUid == request.auth.uid`; `update`/`delete` require `resource.data.authorUid == request.auth.uid`.
 
-A few resources to get you started if this is your first Flutter project:
-
-- [Learn Flutter](https://docs.flutter.dev/get-started/learn-flutter)
-- [Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Flutter learning resources](https://docs.flutter.dev/reference/learning-resources)
-
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+## Implemented Extra Spices (Undergraduate Track — 3 of 6 + Main Spice)
+- **Main Spice (Release Readiness Gate)**: Verified end-to-end smoke test against the compiled `app-release.apk` build.
+- **Spice #4 (Idempotent Alchemist)**: Uses deterministic draft document IDs paired with `FirebaseFirestore.runTransaction` so concurrent duplicate submissions produce exactly one message record.
+- **Spice #5 (Schema Shape-shifter)**: Tags new posts with `schemaVersion: 2` and `category`, while supporting backward-compatible reads and lossless batch migration (`migrateV1ToV2`) of legacy `v1` documents using `body`.
+- **Spice #6 (Batch Librarian)**: Caps live board reads with `orderBy('createdAt', descending: true).limit(25)` + `startAfterDocument` cursor queries, and executes atomic `WriteBatch` operations for seeding and bulk deletion.
