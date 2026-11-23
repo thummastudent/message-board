@@ -18,6 +18,18 @@ class _BoardScreenState extends State<BoardScreen> {
   final _messageController = TextEditingController();
 
   bool _isPosting = false;
+  late String _currentDraftId;
+
+  @override
+  void initState() {
+    super.initState();
+    _currentDraftId = _generateDraftId();
+  }
+
+  String _generateDraftId() {
+    final uid = _authService.currentUser?.uid ?? 'anon';
+    return '${uid}_${DateTime.now().microsecondsSinceEpoch}';
+  }
 
   @override
   void dispose() {
@@ -32,8 +44,12 @@ class _BoardScreenState extends State<BoardScreen> {
 
     setState(() => _isPosting = true);
     try {
-      await _boardService.createMessage(text: text);
+      await _boardService.createMessage(
+        text: text,
+        customDocId: _currentDraftId,
+      );
       _messageController.clear();
+      _currentDraftId = _generateDraftId();
     } on FirebaseException catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -42,6 +58,63 @@ class _BoardScreenState extends State<BoardScreen> {
       }
     } finally {
       if (mounted) setState(() => _isPosting = false);
+    }
+  }
+
+  Future<void> _runIdempotentDuplicateTest() async {
+    final deterministicId = _generateDraftId();
+    try {
+      await Future.wait([
+        _boardService.createMessage(
+          text: 'Idempotency check (concurrent duplicate write)',
+          customDocId: deterministicId,
+        ),
+        _boardService.createMessage(
+          text: 'Idempotency check (concurrent duplicate write)',
+          customDocId: deterministicId,
+        ),
+      ]);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Fired 2 concurrent writes for $deterministicId — only 1 doc created!',
+            ),
+          ),
+        );
+      }
+    } on FirebaseException catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Idempotency test error: ${e.message}')),
+        );
+      }
+    }
+  }
+
+  Future<void> _handleSchemaAction(String action) async {
+    try {
+      if (action == 'seed_v1') {
+        await _boardService.seedLegacyV1Message();
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Seeded legacy v1 message document.')),
+          );
+        }
+      } else if (action == 'migrate_v2') {
+        final count = await _boardService.migrateV1ToV2();
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Migrated $count v1 document(s) to v2!')),
+          );
+        }
+      }
+    } on FirebaseException catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Schema action error: ${e.message}')),
+        );
+      }
     }
   }
 
@@ -98,7 +171,6 @@ class _BoardScreenState extends State<BoardScreen> {
     }
   }
 
-  // Deliberately attempts an unauthorized write to verify Firestore Security Rules
   Future<void> _runRulesDenialProbe() async {
     try {
       await FirebaseFirestore.instance
@@ -140,6 +212,26 @@ class _BoardScreenState extends State<BoardScreen> {
       appBar: AppBar(
         title: const Text('Message Board'),
         actions: [
+          PopupMenuButton<String>(
+            tooltip: 'Schema Versioning (Spice #5)',
+            icon: const Icon(Icons.schema_outlined),
+            onSelected: _handleSchemaAction,
+            itemBuilder: (ctx) => const [
+              PopupMenuItem(
+                value: 'seed_v1',
+                child: Text('Seed Legacy v1 Doc'),
+              ),
+              PopupMenuItem(
+                value: 'migrate_v2',
+                child: Text('Migrate v1 -> v2'),
+              ),
+            ],
+          ),
+          IconButton(
+            tooltip: 'Test Idempotent Duplicate Submit',
+            icon: const Icon(Icons.repeat_one),
+            onPressed: _runIdempotentDuplicateTest,
+          ),
           IconButton(
             tooltip: 'Test Rules Denial',
             icon: const Icon(Icons.security),

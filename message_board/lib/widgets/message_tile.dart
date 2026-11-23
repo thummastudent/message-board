@@ -28,10 +28,12 @@ class MessageTile extends StatelessWidget {
         subtitle: Padding(
           padding: const EdgeInsets.only(top: 4),
           child: Text(
-            '${message.authorName}${message.isEdited ? ' (edited)' : ''}',
+            '${message.authorName} • v${message.schemaVersion} [${message.category}]${message.isEdited ? ' (edited)' : ''}',
             style: TextStyle(
               fontSize: 12,
-              color: Colors.grey.shade700,
+              color: message.schemaVersion == 1
+                  ? Colors.orange.shade800
+                  : Colors.grey.shade700,
             ),
           ),
         ),
