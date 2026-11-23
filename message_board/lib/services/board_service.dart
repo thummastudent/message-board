@@ -18,7 +18,7 @@ class BoardService {
             snapshot.docs.map((doc) => BoardMessage.fromDoc(doc)).toList());
   }
 
-  // CREATE: Stores authorUid, authorName, text, and serverTimestamp
+  // CREATE: Idempotent write using deterministic customDocId + transaction
   Future<void> createMessage({
     required String text,
     String? customDocId,
@@ -52,7 +52,13 @@ class BoardService {
     };
 
     if (customDocId != null) {
-      await _messages.doc(customDocId).set(payload);
+      final docRef = _messages.doc(customDocId);
+      await _db.runTransaction((transaction) async {
+        final existing = await transaction.get(docRef);
+        if (!existing.exists) {
+          transaction.set(docRef, payload);
+        }
+      });
     } else {
       await _messages.add(payload);
     }
