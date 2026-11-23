@@ -17,6 +17,8 @@ class _BoardScreenState extends State<BoardScreen> {
   final BoardService _boardService = BoardService();
   final _messageController = TextEditingController();
 
+  static const int _pageSize = 25;
+  int _currentLimit = _pageSize;
   bool _isPosting = false;
   late String _currentDraftId;
 
@@ -118,6 +120,55 @@ class _BoardScreenState extends State<BoardScreen> {
     }
   }
 
+  Future<void> _handleBatchAction(String action) async {
+    try {
+      if (action == 'seed_105') {
+        await _boardService.seedBatchMessages(count: 105);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Batch-seeded 105 messages (showing latest 25).'),
+            ),
+          );
+        }
+      } else if (action == 'cursor_probe') {
+        final firstPage =
+            await _boardService.fetchLatestPageSnapshot(pageSize: _pageSize);
+        if (firstPage.docs.isEmpty) return;
+        final cursorDoc = firstPage.docs.last;
+        final nextPage = await _boardService.fetchOlderPage(
+          lastVisibleDoc: cursorDoc,
+          pageSize: _pageSize,
+        );
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                'Cursor query after ${cursorDoc.id}: fetched ${nextPage.docs.length} older docs.',
+              ),
+            ),
+          );
+        }
+      } else if (action == 'clear_mine') {
+        final deleted = await _boardService.deleteAllMyMessagesBatch();
+        setState(() => _currentLimit = _pageSize);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Atomic batch deleted $deleted of your messages.'),
+            ),
+          );
+        }
+      }
+    } on FirebaseException catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Batch action error: ${e.message}')),
+        );
+      }
+    }
+  }
+
   Future<void> _showEditDialog(BoardMessage message) async {
     final editController = TextEditingController(text: message.text);
     final updated = await showDialog<String>(
@@ -213,6 +264,25 @@ class _BoardScreenState extends State<BoardScreen> {
         title: const Text('Message Board'),
         actions: [
           PopupMenuButton<String>(
+            tooltip: 'Batch & Pagination (Spice #6)',
+            icon: const Icon(Icons.layers_outlined),
+            onSelected: _handleBatchAction,
+            itemBuilder: (ctx) => const [
+              PopupMenuItem(
+                value: 'seed_105',
+                child: Text('Batch Seed 105 Messages'),
+              ),
+              PopupMenuItem(
+                value: 'cursor_probe',
+                child: Text('Test Cursor Page Query'),
+              ),
+              PopupMenuItem(
+                value: 'clear_mine',
+                child: Text('Batch Delete All My Posts'),
+              ),
+            ],
+          ),
+          PopupMenuButton<String>(
             tooltip: 'Schema Versioning (Spice #5)',
             icon: const Icon(Icons.schema_outlined),
             onSelected: _handleSchemaAction,
@@ -248,7 +318,7 @@ class _BoardScreenState extends State<BoardScreen> {
         children: [
           Expanded(
             child: StreamBuilder<List<BoardMessage>>(
-              stream: _boardService.messagesStream(),
+              stream: _boardService.messagesStream(limit: _currentLimit),
               builder: (context, snapshot) {
                 if (snapshot.hasError) {
                   return Center(
@@ -270,11 +340,31 @@ class _BoardScreenState extends State<BoardScreen> {
                   );
                 }
 
+                final hasMorePages = messages.length >= _currentLimit;
+
                 return ListView.builder(
                   padding: const EdgeInsets.all(12),
-                  itemCount: messages.length,
+                  itemCount: messages.length + (hasMorePages ? 1 : 0),
                   itemBuilder: (context, index) {
-                    final msg = messages[index];
+                    if (hasMorePages && index == 0) {
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 10),
+                        child: OutlinedButton.icon(
+                          icon: const Icon(Icons.expand_less),
+                          label: Text(
+                            'Showing latest ${messages.length} • Load 25 older',
+                          ),
+                          onPressed: () {
+                            setState(() {
+                              _currentLimit += _pageSize;
+                            });
+                          },
+                        ),
+                      );
+                    }
+
+                    final msgIndex = hasMorePages ? index - 1 : index;
+                    final msg = messages[msgIndex];
                     return MessageTile(
                       message: msg,
                       isMine: msg.authorUid == currentUid,

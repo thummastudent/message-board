@@ -9,12 +9,37 @@ class BoardService {
 
   CollectionReference get _messages => _db.collection('messages');
 
-  Stream<List<BoardMessage>> messagesStream() {
+  // SPICE #6: Live stream capped by pageSize (newest messages first, reversed for display)
+  Stream<List<BoardMessage>> messagesStream({int limit = 25}) {
     return _messages
-        .orderBy('createdAt', descending: false)
+        .orderBy('createdAt', descending: true)
+        .limit(limit)
         .snapshots()
-        .map((snapshot) =>
-            snapshot.docs.map((doc) => BoardMessage.fromDoc(doc)).toList());
+        .map((snapshot) => snapshot.docs
+            .map((doc) => BoardMessage.fromDoc(doc))
+            .toList()
+            .reversed
+            .toList());
+  }
+
+  // SPICE #6: Cursor-based pagination to fetch older pages using startAfterDocument
+  Future<QuerySnapshot> fetchOlderPage({
+    required DocumentSnapshot lastVisibleDoc,
+    int pageSize = 25,
+  }) {
+    return _messages
+        .orderBy('createdAt', descending: true)
+        .startAfterDocument(lastVisibleDoc)
+        .limit(pageSize)
+        .get();
+  }
+
+  // Helper to fetch raw snapshot page for cursor tracking
+  Future<QuerySnapshot> fetchLatestPageSnapshot({int pageSize = 25}) {
+    return _messages
+        .orderBy('createdAt', descending: true)
+        .limit(pageSize)
+        .get();
   }
 
   Future<String> _resolveAuthorName(User user) async {
@@ -29,7 +54,7 @@ class BoardService {
     return authorName;
   }
 
-  // CREATE (v2 schema)
+  // CREATE (v2 schema + idempotency)
   Future<void> createMessage({
     required String text,
     String? customDocId,
@@ -71,7 +96,7 @@ class BoardService {
     }
   }
 
-  // SPICE #5: Seed a legacy v1 document (uses 'body', lacks 'schemaVersion' and 'category')
+  // SPICE #5: Seed a legacy v1 document
   Future<void> seedLegacyV1Message() async {
     final user = _auth.currentUser;
     if (user == null) return;
@@ -85,14 +110,12 @@ class BoardService {
     });
   }
 
-  // SPICE #5: Lossless migration from v1 to v2 for the current user's legacy documents
+  // SPICE #5: Lossless migration from v1 to v2
   Future<int> migrateV1ToV2() async {
     final user = _auth.currentUser;
     if (user == null) return 0;
 
-    final query = await _messages
-        .where('authorUid', isEqualTo: user.uid)
-        .get();
+    final query = await _messages.where('authorUid', isEqualTo: user.uid).get();
 
     final batch = _db.batch();
     int migratedCount = 0;
@@ -116,6 +139,47 @@ class BoardService {
       await batch.commit();
     }
     return migratedCount;
+  }
+
+  // SPICE #6: Seed 105 messages using atomic WriteBatch to demonstrate cursor pagination
+  Future<void> seedBatchMessages({int count = 105}) async {
+    final user = _auth.currentUser;
+    if (user == null) return;
+    final authorName = await _resolveAuthorName(user);
+
+    final batch = _db.batch();
+    final baseTime = DateTime.now().subtract(Duration(minutes: count));
+
+    for (int i = 1; i <= count; i++) {
+      final docRef = _messages.doc();
+      batch.set(docRef, {
+        'text': 'Seeded batch message #$i of$count',
+        'authorUid': user.uid,
+        'authorName': authorName,
+        'schemaVersion': 2,
+        'category': 'batch-seed',
+        'createdAt': Timestamp.fromDate(baseTime.add(Duration(seconds: i))),
+        'editedAt': null,
+      });
+    }
+
+    await batch.commit();
+  }
+
+  // SPICE #6: Atomic batch delete of all messages owned by the signed-in user
+  Future<int> deleteAllMyMessagesBatch() async {
+    final user = _auth.currentUser;
+    if (user == null) return 0;
+
+    final query = await _messages.where('authorUid', isEqualTo: user.uid).get();
+    if (query.docs.isEmpty) return 0;
+
+    final batch = _db.batch();
+    for (final doc in query.docs) {
+      batch.delete(doc.reference);
+    }
+    await batch.commit();
+    return query.docs.length;
   }
 
   Future<void> updateMessage({
