@@ -33,6 +33,13 @@ class _AuthScreenState extends State<AuthScreen> {
     super.dispose();
   }
 
+  String? _validateRequired(String? value, String label) {
+    if (value == null || value.trim().isEmpty) {
+      return 'Enter $label';
+    }
+    return null;
+  }
+
   Future<void> _submit() async {
     if (_isLoading) return;
     if (!_formKey.currentState!.validate()) return;
@@ -59,7 +66,7 @@ class _AuthScreenState extends State<AuthScreen> {
       }
     } on FirebaseAuthException catch (e) {
       setState(() {
-        _errorMessage = '${e.code}:${e.message ?? 'Authentication failed.'}';
+        _errorMessage = '${e.code}: ${e.message ?? 'Authentication failed.'}';
       });
     } catch (e) {
       setState(() {
@@ -94,22 +101,91 @@ class _AuthScreenState extends State<AuthScreen> {
                     TextFormField(
                       controller: _firstNameController,
                       decoration: const InputDecoration(labelText: 'First Name'),
-                      validator: (v) => (v == null || v.trim().isEmpty)
-                          ? 'Enter first name'
-                          : null,
+                      validator: (v) => _validateRequired(v, 'first name'),
                     ),
                     const SizedBox(height: 12),
                     TextFormField(
                       controller: _lastNameController,
                       decoration: const InputDecoration(labelText: 'Last Name'),
-                      validator: (v) => (v == null || v.trim().isEmpty)
-                          ? 'Enter last name'
-                          : null,
+                      validator: (v) => _validateRequired(v, 'last name'),
                     ),
                     const SizedBox(height: 12),
                     TextFormField(
                       controller: _roleController,
                       decoration: const InputDecoration(
-                          labelText: 'Role (e.g., student)'),
-                      validator: (v) =>
-                          (v == null || v.trim().isEmpty) ? 'Enter role' :
+                        labelText: 'Role (e.g., student)',
+                      ),
+                      validator: (v) => _validateRequired(v, 'role'),
+                    ),
+                    const SizedBox(height: 12),
+                  ],
+                  TextFormField(
+                    controller: _emailController,
+                    keyboardType: TextInputType.emailAddress,
+                    decoration: const InputDecoration(labelText: 'Email'),
+                    validator: (v) => (v == null || !v.contains('@'))
+                        ? 'Enter a valid email'
+                        : null,
+                  ),
+                  const SizedBox(height: 12),
+                  TextFormField(
+                    controller: _passwordController,
+                    obscureText: true,
+                    decoration: const InputDecoration(
+                      labelText: 'Password (min 6 chars)',
+                    ),
+                    validator: (v) => (v == null || v.length < 6)
+                        ? 'Minimum 6 characters'
+                        : null,
+                  ),
+                  const SizedBox(height: 20),
+                  if (_errorMessage != null)
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      margin: const EdgeInsets.only(bottom: 16),
+                      decoration: BoxDecoration(
+                        color: Colors.red.shade50,
+                        border: Border.all(color: Colors.red.shade300),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        _errorMessage!,
+                        style: TextStyle(color: Colors.red.shade900),
+                      ),
+                    ),
+                  ElevatedButton(
+                    onPressed: _isLoading ? null : _submit,
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      child: Text(
+                        _isLoading
+                            ? 'Please wait...'
+                            : (_isRegisterMode ? 'Register' : 'Sign In'),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextButton(
+                    onPressed: _isLoading
+                        ? null
+                        : () {
+                            setState(() {
+                              _isRegisterMode = !_isRegisterMode;
+                              _errorMessage = null;
+                            });
+                          },
+                    child: Text(
+                      _isRegisterMode
+                          ? 'Already have an account? Sign In'
+                          : 'Need an account? Register',
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
